@@ -9,6 +9,7 @@ import '@pnp/sp/webs';
 import '@pnp/sp/lists';
 import '@pnp/sp/items';
 import '@pnp/sp/attachments';
+import '@pnp/sp/site-users';
 
 // People Picker Control Imports
 import { PeoplePicker, PrincipalType, IPeoplePickerContext } from '@pnp/spfx-controls-react/lib/PeoplePicker';
@@ -22,6 +23,7 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
   const [schoolName, setSchoolName] = useState<string>('');
   const [selectedSchool, setSelectedSchool] = useState<string>('');
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
+  const [selectedPersonLoginName, setSelectedPersonLoginName] = useState<string>('');
   const [selectedPersonEmail, setSelectedPersonEmail] = useState<string>('');
   const [documentStatus, setDocumentStatus] = useState<string>('New');
   const [nonPecuniaryDamages, setNonPecuniaryDamages] = useState<string>('');
@@ -78,11 +80,10 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
 
   const _getPeoplePickerItems = (items: any[]): void => {
     if (items && items.length > 0) {
-      const userId = parseInt(items[0].id, 10);
-      setSelectedPersonId(isNaN(userId) ? null : userId);
+      setSelectedPersonLoginName(items[0].loginName || items[0].id || '');
       setSelectedPersonEmail(items[0].secondaryText || items[0].loginName || '');
     } else {
-      setSelectedPersonId(null);
+      setSelectedPersonLoginName('');
       setSelectedPersonEmail('');
     }
   };
@@ -101,6 +102,12 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
       // Initialize PnP JS
       const sp = spfi().using(SPFx(context));
 
+      let userId: number | null = null;
+      if (selectedPersonLoginName) {
+        const userResult = await sp.web.ensureUser(selectedPersonLoginName);
+        userId = userResult.Id;
+      }
+
       // Construct item payload
       const payload: Record<string, any> = {
         Title: schoolName,
@@ -113,14 +120,14 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
       };
 
       // Set AssignTo Person Field
-      if (selectedPersonId) {
-        payload.AssignTo = selectedPersonId;
+      if (userId) {
+        payload.AssignToId = userId;
       }
 
       // 1. Add item to SharePoint List
       const list = sp.web.lists.getById(LIST_IDS.Schools);
       const itemResult = await list.items.add(payload);
-      const itemId = itemResult.data.Id;
+      const itemId = itemResult.Id;
 
       // 2. Upload attachments if any
       if (attachmentFiles.length > 0) {
@@ -149,6 +156,7 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
     setSchoolName('');
     setSelectedSchool('');
     setSelectedPersonId(null);
+    setSelectedPersonLoginName('');
     setSelectedPersonEmail('');
     setDocumentStatus('New');
     setNonPecuniaryDamages('');
@@ -282,10 +290,8 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
             required={false}
             disabled={isSubmitting}
             onChange={_getPeoplePickerItems}
-            showHiddenInUI={false}
             principalTypes={[PrincipalType.User]}
             resolveDelay={1000}
-            defaultSelectedUsers={selectedPersonEmail ? [selectedPersonEmail] : []}
             placeholder="Enter a name or email address"
           />
         </div>
