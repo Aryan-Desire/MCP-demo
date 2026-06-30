@@ -1,0 +1,19 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "useGulp": false,
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "22.22.0",
+    "sdksVersions": {},
+    "version": "1.23.0",
+    "libraryName": "mcp-demo",
+    "libraryId": "f7aff936-e236-4e46-9a95-9c65d4d36f4d",
+    "environment": "spo",
+    "packageManager": "npm",
+    "solutionName": "mcp-demo",
+    "solutionShortDescription": "mcp-demo description",
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "componentType": "webpart"
+  }
+}

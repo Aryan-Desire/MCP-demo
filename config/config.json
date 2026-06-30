@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "mcp-demo-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/mcpDemo/McpDemoWebPart.js",
+          "manifest": "./src/webparts/mcpDemo/McpDemoWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {
+    "McpDemoWebPartStrings": "lib/webparts/mcpDemo/loc/{locale}.js"
+  }
+}

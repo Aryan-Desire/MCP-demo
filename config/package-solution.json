@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "mcp-demo-client-side-solution",
+    "id": "f7aff936-e236-4e46-9a95-9c65d4d36f4d",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "",
+      "websiteUrl": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.23.0"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "mcp-demo description"
+      },
+      "longDescription": {
+        "default": "mcp-demo description"
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "mcp-demo Feature",
+        "description": "The feature that activates elements of the mcp-demo solution.",
+        "id": "b06686ef-2e43-47de-99a0-6736883c5cab",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/mcp-demo.sppkg"
+  }
+}
