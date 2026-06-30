@@ -1,3 +1,11 @@
 {
-  "extends": "./node_modules/@microsoft/spfx-web-build-rig/profiles/default/tsconfig-base.json"
+  "extends": "./node_modules/@microsoft/spfx-web-build-rig/profiles/default/tsconfig-base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@microsoft/sp-http-msgraph": ["node_modules/@microsoft/sp-http-msgraph"],
+      "@microsoft/sp-http": ["node_modules/@microsoft/sp-http"],
+      "@microsoft/sp-core-library": ["node_modules/@microsoft/sp-core-library"]
+    }
+  }
 }

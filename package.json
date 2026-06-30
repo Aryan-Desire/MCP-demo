@@ -23,6 +23,7 @@
     "@microsoft/sp-webpart-base": "1.23.0",
     "@pnp/core": "^4.20.0",
     "@pnp/sp": "^4.20.0",
+    "@pnp/spfx-controls-react": "^3.24.0",
     "react": "17.0.1",
     "react-dom": "17.0.1",
     "tslib": "2.3.1"

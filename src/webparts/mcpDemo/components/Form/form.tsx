@@ -10,20 +10,8 @@ import '@pnp/sp/lists';
 import '@pnp/sp/items';
 import '@pnp/sp/attachments';
 
-interface IUser {
-  name: string;
-  email: string;
-  avatarColor: string;
-}
-
-const mockUsers: IUser[] = [
-  { name: 'Adela Vance', email: 'AdelaV@M365x214355.onmicrosoft.com', avatarColor: 'bg-purple-600' },
-  { name: 'Alex Wilber', email: 'AlexW@M365x214355.onmicrosoft.com', avatarColor: 'bg-green-600' },
-  { name: 'Allan Deyoung', email: 'AllanD@M365x214355.onmicrosoft.com', avatarColor: 'bg-blue-600' },
-  { name: 'Ashley McCarthy', email: 'AshleyM@M365x214355.onmicrosoft.com', avatarColor: 'bg-pink-600' },
-  { name: 'Brian Johnson', email: 'BrianJ@M365x214355.onmicrosoft.com', avatarColor: 'bg-yellow-600' },
-  { name: 'Christie Cline', email: 'ChristieC@M365x214355.onmicrosoft.com', avatarColor: 'bg-indigo-600' },
-];
+// People Picker Control Imports
+import { PeoplePicker, PrincipalType, IPeoplePickerContext } from '@pnp/spfx-controls-react/lib/PeoplePicker';
 
 export interface IFormProps {
   context: WebPartContext;
@@ -33,8 +21,8 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
   // Form Field States
   const [schoolName, setSchoolName] = useState<string>('');
   const [selectedSchool, setSelectedSchool] = useState<string>('');
-  const [assignToInput, setAssignToInput] = useState<string>('');
-  const [assignedUser, setAssignedUser] = useState<IUser | null>(null);
+  const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
+  const [selectedPersonEmail, setSelectedPersonEmail] = useState<string>('');
   const [documentStatus, setDocumentStatus] = useState<string>('New');
   const [nonPecuniaryDamages, setNonPecuniaryDamages] = useState<string>('');
   const [punitiveDamages, setPunitiveDamages] = useState<string>('');
@@ -43,22 +31,23 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
 
   // UI Control States
   const [showSchoolDropdown, setShowSchoolDropdown] = useState<boolean>(false);
-  const [showAssignToSuggestions, setShowAssignToSuggestions] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showToast, setShowToast] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string>('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const assignToContainerRef = useRef<HTMLDivElement>(null);
   const schoolDropdownRef = useRef<HTMLDivElement>(null);
+
+  const peoplePickerContext: IPeoplePickerContext = {
+    absoluteUrl: context.pageContext.web.absoluteUrl,
+    msGraphClientFactory: context.msGraphClientFactory,
+    spHttpClient: context.spHttpClient
+};
 
   // Close dropdowns on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent): void {
-      if (assignToContainerRef.current && !assignToContainerRef.current.contains(event.target as Node)) {
-        setShowAssignToSuggestions(false);
-      }
       if (schoolDropdownRef.current && !schoolDropdownRef.current.contains(event.target as Node)) {
         setShowSchoolDropdown(false);
       }
@@ -87,6 +76,17 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
     setAttachmentFiles(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
+  const _getPeoplePickerItems = (items: any[]): void => {
+    if (items && items.length > 0) {
+      const userId = parseInt(items[0].id, 10);
+      setSelectedPersonId(isNaN(userId) ? null : userId);
+      setSelectedPersonEmail(items[0].secondaryText || items[0].loginName || '');
+    } else {
+      setSelectedPersonId(null);
+      setSelectedPersonEmail('');
+    }
+  };
+
   const handleSave = async (): Promise<void> => {
     if (!schoolName.trim()) {
       setToastType('error');
@@ -102,8 +102,6 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
       const sp = spfi().using(SPFx(context));
 
       // Construct item payload
-      // Make sure the fields match your SharePoint list internal column names.
-      // Falls back dynamically in case column names differ slightly.
       const payload: Record<string, any> = {
         Title: schoolName,
         Domain: 'school',
@@ -114,12 +112,9 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
         SchoolsComments: comments
       };
 
-      // If you are using Person field in SharePoint list:
-      // Note: Typically you need to resolve User ID, but to keep it simple, we store it
-      // if column exists, or as text. If AssignTo is a Person field, PnP JS expects 'AssignToId'
-      // with a numeric ID. As a robust solution, we save the text name to AssignTo if it's text.
-      if (assignedUser) {
-        payload.AssignTo = assignedUser.name;
+      // Set AssignTo Person Field
+      if (selectedPersonId) {
+        payload.AssignTo = selectedPersonId;
       }
 
       // 1. Add item to SharePoint List
@@ -153,19 +148,14 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
   const handleCancel = (): void => {
     setSchoolName('');
     setSelectedSchool('');
-    setAssignToInput('');
-    setAssignedUser(null);
+    setSelectedPersonId(null);
+    setSelectedPersonEmail('');
     setDocumentStatus('New');
     setNonPecuniaryDamages('');
     setPunitiveDamages('');
     setComments('');
     setAttachmentFiles([]);
   };
-
-  const filteredUsers = mockUsers.filter(user => 
-    user.name.toLowerCase().includes(assignToInput.toLowerCase()) || 
-    user.email.toLowerCase().includes(assignToInput.toLowerCase())
-  );
 
   return (
     <div className="max-w-4xl mx-auto my-6 bg-white border border-gray-200 rounded-lg shadow-sm font-sans text-gray-800 relative">
@@ -276,8 +266,8 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
         </div>
 
         {/* Field 3: AssignTo People Picker */}
-        <div className="space-y-1.5 relative" ref={assignToContainerRef}>
-          <label className="flex items-center text-xs font-semibold text-gray-700 tracking-wide uppercase">
+        <div className="space-y-1.5 relative">
+          <label className="flex items-center text-xs font-semibold text-gray-700 tracking-wide uppercase mb-1">
             <span className="inline-flex items-center justify-center w-5 h-5 mr-2 text-gray-500">
               <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -285,63 +275,19 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
             </span>
             AssignTo
           </label>
-          <div className="flex flex-wrap items-center gap-2 w-full px-3 py-1.5 border border-gray-300 rounded bg-gray-50/50 hover:bg-gray-50 focus-within:border-indigo-600 focus-within:ring-1 focus-within:ring-indigo-600 transition-colors">
-            {assignedUser && (
-              <span className="flex items-center space-x-1.5 bg-indigo-50 text-indigo-800 text-xs font-medium px-2 py-0.5 rounded border border-indigo-200">
-                <span className={`w-4 h-4 rounded-full ${assignedUser.avatarColor} text-white flex items-center justify-center text-[9px]`}>
-                  {assignedUser.name.charAt(0)}
-                </span>
-                <span>{assignedUser.name}</span>
-                <button 
-                  onClick={() => !isSubmitting && setAssignedUser(null)} 
-                  disabled={isSubmitting}
-                  className="text-indigo-500 hover:text-indigo-700 font-bold focus:outline-none disabled:opacity-50"
-                >
-                  &times;
-                </button>
-              </span>
-            )}
-            <input
-              type="text"
-              placeholder={assignedUser ? "" : "Enter a name or email address"}
-              value={assignToInput}
-              disabled={isSubmitting}
-              onChange={(e) => {
-                setAssignToInput(e.target.value);
-                setShowAssignToSuggestions(true);
-              }}
-              onFocus={() => !isSubmitting && setShowAssignToSuggestions(true)}
-              className="flex-grow min-w-[200px] text-sm bg-transparent outline-none py-0.5 disabled:opacity-60"
-            />
-          </div>
-
-          {showAssignToSuggestions && (
-            <div className="absolute left-0 z-10 w-full mt-1 bg-white border border-gray-200 rounded shadow-lg max-h-56 overflow-y-auto">
-              {filteredUsers.length > 0 ? (
-                filteredUsers.map((user) => (
-                  <div
-                    key={user.email}
-                    onClick={() => {
-                      setAssignedUser(user);
-                      setAssignToInput('');
-                      setShowAssignToSuggestions(false);
-                    }}
-                    className="flex items-center space-x-3 px-3 py-2 hover:bg-indigo-50 cursor-pointer"
-                  >
-                    <div className={`w-8 h-8 rounded-full ${user.avatarColor} text-white flex items-center justify-center font-semibold text-sm`}>
-                      {user.name.split(' ').map(n => n.charAt(0)).join('')}
-                    </div>
-                    <div className="text-left">
-                      <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                      <div className="text-xs text-gray-500">{user.email}</div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="px-3 py-2 text-sm text-gray-500">No suggestions found</div>
-              )}
-            </div>
-          )}
+          <PeoplePicker
+            context={peoplePickerContext}
+            personSelectionLimit={1}
+            showtooltip={true}
+            required={false}
+            disabled={isSubmitting}
+            onChange={_getPeoplePickerItems}
+            showHiddenInUI={false}
+            principalTypes={[PrincipalType.User]}
+            resolveDelay={1000}
+            defaultSelectedUsers={selectedPersonEmail ? [selectedPersonEmail] : []}
+            placeholder="Enter a name or email address"
+          />
         </div>
 
         {/* Field 4: Document Status */}
