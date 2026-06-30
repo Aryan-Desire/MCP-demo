@@ -147,6 +147,8 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
+            listId: LIST_IDS.Schools,
+            itemId,
             schoolName,
             selectedSchool,
             assignToLogin: selectedPersonLoginName,

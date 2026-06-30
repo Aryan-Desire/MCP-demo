@@ -12,6 +12,8 @@ app.http('mcpDemo', {
                 
                 context.log('====================================');
                 context.log('RECEIVED FORM DATA:');
+                context.log(`List ID: ${data.listId || 'N/A'}`);
+                context.log(`Item ID: ${data.itemId || 'N/A'}`);
                 context.log(`School Name: ${data.schoolName || 'N/A'}`);
                 context.log(`Selected School: ${data.selectedSchool || 'N/A'}`);
                 context.log(`Assign To (User Login): ${data.assignToLogin || 'N/A'}`);
