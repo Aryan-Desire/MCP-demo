@@ -37,6 +37,7 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
   const [showToast, setShowToast] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string>('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [azureResponse, setAzureResponse] = useState<any | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const schoolDropdownRef = useRef<HTMLDivElement>(null);
@@ -98,6 +99,7 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
     }
 
     setIsSubmitting(true);
+    setAzureResponse(null);
     try {
       // Initialize PnP JS
       const sp = spfi().using(SPFx(context));
@@ -137,10 +139,39 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
         }
       }
 
+      // 3. POST to Azure Function
+      try {
+        const response = await fetch('http://localhost:7071/api/mcpDemo', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            schoolName,
+            selectedSchool,
+            assignToLogin: selectedPersonLoginName,
+            assignToEmail: selectedPersonEmail,
+            documentStatus,
+            nonPecuniaryDamages,
+            punitiveDamages,
+            comments,
+            attachments: attachmentFiles.map(f => f.name)
+          })
+        });
+
+        if (response.ok) {
+          const resData = await response.json();
+          setAzureResponse(resData);
+        } else {
+          console.error('Azure Function returned status:', response.status);
+        }
+      } catch (azureErr) {
+        console.error('Error calling Azure Function:', azureErr);
+      }
+
       setToastType('success');
-      setToastMessage('Item and attachments successfully saved to SharePoint!');
+      setToastMessage('Item saved to SharePoint and posted to Azure Function!');
       setShowToast(true);
-      handleCancel(); // Clear form on success
     } catch (error: any) {
       console.error('Error saving item to SharePoint list:', error);
       setToastType('error');
@@ -163,6 +194,7 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
     setPunitiveDamages('');
     setComments('');
     setAttachmentFiles([]);
+    setAzureResponse(null);
   };
 
   return (
@@ -209,6 +241,22 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
 
       {/* Form Content Area */}
       <div className="p-6 space-y-6">
+
+        {/* Azure Function Response */}
+        {azureResponse && (
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 space-y-2">
+            <h3 className="font-semibold text-sm flex items-center">
+              <svg className="w-5 h-5 mr-2 text-emerald-600 fill-current" viewBox="0 0 20 20">
+                <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
+              </svg>
+              Response from Azure Function:
+            </h3>
+            <p className="text-xs">{azureResponse.message}</p>
+            <div className="text-xs bg-white/80 p-3 rounded border border-emerald-100 font-mono text-gray-700 max-h-48 overflow-y-auto">
+              <pre>{JSON.stringify(azureResponse.receivedData, null, 2)}</pre>
+            </div>
+          </div>
+        )}
 
         {/* Field 1: Please enter the name of the Schools */}
         <div className="space-y-1.5">
