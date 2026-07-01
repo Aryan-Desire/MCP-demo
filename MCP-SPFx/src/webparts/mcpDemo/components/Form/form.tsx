@@ -162,16 +162,7 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
           },
           body: JSON.stringify({
             listId: LIST_IDS.Schools,
-            itemId,
-            schoolName,
-            selectedSchool,
-            assignToLogin: selectedPersonLoginName,
-            assignToEmail: selectedPersonEmail,
-            documentStatus,
-            nonPecuniaryDamages,
-            punitiveDamages,
-            comments,
-            attachments: uploadedAttachments
+            itemId
           })
         });
 

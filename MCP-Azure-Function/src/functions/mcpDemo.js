@@ -1,4 +1,6 @@
 const { app } = require('@azure/functions');
+const { DefaultAzureCredential } = require('@azure/identity');
+const { AIProjectClient } = require('@azure/ai-projects');
 
 app.http('mcpDemo', {
     methods: ['GET', 'POST'],
@@ -6,113 +8,94 @@ app.http('mcpDemo', {
     handler: async (request, context) => {
         context.log(`Http function processed request for url "${request.url}"`);
 
-        const openAiEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
-        const openAiKey = process.env.AZURE_OPENAI_API_KEY;
-        const openAiDeployment = process.env.AZURE_OPENAI_DEPLOYMENT_NAME;
+        const aiProjectsEndpoint = process.env.AZURE_AI_PROJECTS_ENDPOINT || "https://ai-agent-mcp-resource.services.ai.azure.com/api/projects/ai-agent-mcp";
+        const agentName = process.env.AZURE_AI_PROJECTS_AGENT_NAME || "mcp-demo-agent";
+        const agentVersion = process.env.AZURE_AI_PROJECTS_AGENT_VERSION || "3";
+
+        let prompt = request.query.get('query') || request.query.get('prompt');
+        let data = null;
 
         if (request.method === 'POST') {
             try {
-                const data = await request.json();
-                
-                context.log('====================================');
-                context.log('RECEIVED FORM DATA FOR SUMMARY:');
-                context.log(`School Name: ${data.schoolName || 'N/A'}`);
-                context.log(`Selected School: ${data.selectedSchool || 'N/A'}`);
-                context.log(`Assign To (User Login): ${data.assignToLogin || 'N/A'}`);
-                context.log(`Assign To (Email): ${data.assignToEmail || 'N/A'}`);
-                context.log(`Document Status: ${data.documentStatus || 'N/A'}`);
-                context.log(`Non-Pecuniary Damages: ${data.nonPecuniaryDamages || 'N/A'}`);
-                context.log(`Punitive Damages: ${data.punitiveDamages || 'N/A'}`);
-                context.log(`Comments: ${data.comments || 'N/A'}`);
-                context.log('====================================');
-
-                let summary = '';
-                let statusMessage = '';
-
-                if (openAiEndpoint && openAiKey && openAiDeployment && 
-                    !openAiEndpoint.startsWith('YOUR_') && 
-                    !openAiKey.startsWith('YOUR_') && 
-                    !openAiDeployment.startsWith('YOUR_')) {
-                    try {
-                        const prompt = `Please generate a concise, professional summary of the following form data:
-- School Name: ${data.schoolName || 'N/A'}
-- Selected School: ${data.selectedSchool || 'N/A'}
-- Assigned To: ${data.assignToLogin || 'N/A'} (${data.assignToEmail || 'N/A'})
-- Document Status: ${data.documentStatus || 'N/A'}
-- Non-Pecuniary Damages: ${data.nonPecuniaryDamages || 'N/A'}
-- Punitive Damages: ${data.punitiveDamages || 'N/A'}
-- Comments: ${data.comments || 'N/A'}`;
-
-                        const url = `${openAiEndpoint.replace(/\/$/, '')}/openai/deployments/${openAiDeployment}/chat/completions?api-version=2025-01-01-preview`;
-                        
-                        context.log(`Calling Azure OpenAI Chat Completions API at: ${url}`);
-                        const response = await fetch(url, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'api-key': openAiKey
-                            },
-                            body: JSON.stringify({
-                                messages: [
-                                    {
-                                        role: "system",
-                                        content: "You are an assistant that creates professional summaries of case/form submissions."
-                                    },
-                                    {
-                                        role: "user",
-                                        content: prompt
-                                    }
-                                ],
-                                max_tokens: 800,
-                                temperature: 0.7
-                            })
-                        });
-
-                        if (response.ok) {
-                            const resJson = await response.json();
-                            summary = resJson.choices?.[0]?.message?.content || 'No summary returned by Azure OpenAI.';
-                            statusMessage = 'Successfully generated summary using Azure OpenAI.';
-                            context.log('Summary successfully generated.');
-                        } else {
-                            const errText = await response.text();
-                            throw new Error(`Azure OpenAI returned ${response.status}: ${errText}`);
-                        }
-                    } catch (err) {
-                        context.log('Error generating summary via Azure OpenAI:', err);
-                        statusMessage = `Error generating summary: ${err.message || String(err)}`;
-                        summary = 'Failed to generate summary due to API or network error.';
-                    }
-                } else {
-                    context.log('Azure OpenAI credentials or endpoint are not fully configured.');
-                    statusMessage = 'Azure OpenAI not configured. Check environment variables.';
-                    summary = `Fallback Summary (Azure OpenAI not configured): School: ${data.schoolName || 'N/A'} - Status: ${data.documentStatus || 'N/A'}`;
+                data = await request.json();
+                if (data && data.query) {
+                    prompt = data.query;
+                } else if (data && data.prompt) {
+                    prompt = data.prompt;
                 }
-
-                return {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        success: true,
-                        message: summary,
-                        summary: summary,
-                        statusMessage: statusMessage,
-                        receivedData: data
-                    })
-                };
             } catch (err) {
-                context.log('Failed to parse request JSON:', err);
-                return {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        success: false,
-                        error: 'Invalid JSON payload'
-                    })
-                };
-            }
+                context.log('Error parsing JSON body:', err);
+            }     
         }
 
-        const name = request.query.get('name') || 'world';
-        return { body: `Hello, ${name}! Send a POST request with form data to process it.` };
+        // If no prompt was explicitly provided but we have listId and itemId, instruct AI to fetch the item via MCP and summarize
+        if (!prompt && data && data.listId && data.itemId) {
+            prompt = `Using the SharePoint MCP tool, retrieve the item with ID ${data.itemId} from the SharePoint list with ID '${data.listId}'. Once retrieved, generate a concise, professional summary of the list item data (including school name, selected school, assignee, document status, damages, and comments).`;
+        } else if (!prompt && data) {
+            prompt = `Please generate a concise, professional summary of the data.`
+        }
+
+        if (!prompt) {
+            prompt = "List the first 5 items from the SharePoint site or tell me what lists exist in the site.";
+        }
+
+        let summary = '';
+        let statusMessage = '';
+
+        if (aiProjectsEndpoint && agentName && agentVersion) {
+            try {
+                context.log('Initializing AIProjectClient...');
+                const projectClient = new AIProjectClient(aiProjectsEndpoint, new DefaultAzureCredential());
+                const openAIClient = projectClient.getOpenAIClient();
+
+                context.log('Creating conversation with initial user message...');
+                const conversation = await openAIClient.conversations.create({
+                    items: [{ type: "message", role: "user", content: prompt }]
+                });
+                context.log(`Created conversation (id: ${conversation.id})`);
+
+                context.log('Generating response using agent reference...');
+                const response = await openAIClient.responses.create(
+                    {
+                        conversation: conversation.id,
+                    },
+                    {
+                        body: { agent: { name: agentName, version: agentVersion, type: "agent_reference" } },
+                    },
+                );
+
+                summary = response.output_text || 'No output text returned by Agent.';
+                statusMessage = 'Successfully executed Agent call via AIProjectClient.';
+                context.log('Agent response generated successfully.');
+            } catch (err) {
+                context.log('Error calling AI Project Agent:', err);
+                statusMessage = `Error calling Project Agent: ${err.message || String(err)}`;
+                summary = `Failed to get response due to error: ${err.message || String(err)}`;
+            }
+        } else {
+            context.log('Required configuration (aiProjectsEndpoint, agentName, or agentVersion) is missing.');
+            statusMessage = 'Configuration missing. Check your environment variables.';
+            summary = 'Fallback: AI Project Agent configuration is missing.';
+        }
+
+        if (request.method === 'POST') {
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: true,
+                    message: summary,
+                    summary: summary,
+                    statusMessage: statusMessage,
+                    receivedData: data
+                })
+            };
+        } else {
+            return {
+                status: 200,
+                headers: { 'Content-Type': 'text/plain' },
+                body: summary
+            };
+        }
     }
 });

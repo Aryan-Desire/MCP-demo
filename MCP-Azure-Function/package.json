@@ -7,8 +7,11 @@
     "test": "echo \"No tests yet...\""
   },
   "dependencies": {
+    "@azure/ai-projects": "^2.2.0",
     "@azure/functions": "^4.0.0",
-    "@azure/identity": "^4.2.0"
+    "@azure/identity": "^4.2.0",
+    "officeparser": "^7.2.3",
+    "openai": "^6.45.0"
   },
   "devDependencies": {
     "azure-functions-core-tools": "^4.x"
