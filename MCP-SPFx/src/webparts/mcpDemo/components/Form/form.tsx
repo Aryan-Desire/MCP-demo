@@ -113,7 +113,6 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
       // Construct item payload
       const payload: Record<string, any> = {
         Title: schoolName,
-        Domain: 'school',
         Schools: selectedSchool,
         DocumentStatus: documentStatus,
         NonPecuniaryDamages: nonPecuniaryDamages,
@@ -132,10 +131,25 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
       const itemId = itemResult.Id;
 
       // 2. Upload attachments if any
+      let uploadedAttachments: { name: string; url: string }[] = [];
       if (attachmentFiles.length > 0) {
         const item = list.items.getById(itemId);
         for (const file of attachmentFiles) {
           await item.attachmentFiles.add(file.name, file);
+        }
+        try {
+          const attachmentsInfo = await item.attachmentFiles();
+          uploadedAttachments = attachmentsInfo.map(att => ({
+            name: att.FileName,
+            url: att.ServerRelativeUrl
+          }));
+        } catch (attErr) {
+          console.error('Error fetching uploaded attachments info:', attErr);
+          // Fallback manual URL generation
+          uploadedAttachments = attachmentFiles.map(file => ({
+            name: file.name,
+            url: `${context.pageContext.web.serverRelativeUrl}/Lists/Schools/Attachments/${itemId}/${file.name}`
+          }));
         }
       }
 
@@ -157,7 +171,7 @@ export const Form: React.FC<IFormProps> = ({ context }) => {
             nonPecuniaryDamages,
             punitiveDamages,
             comments,
-            attachments: attachmentFiles.map(f => f.name)
+            attachments: uploadedAttachments
           })
         });
 
