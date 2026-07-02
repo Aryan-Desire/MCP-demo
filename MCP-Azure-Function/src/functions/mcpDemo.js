@@ -31,7 +31,7 @@ app.http('mcpDemo', {
 
         // If no prompt was explicitly provided but we have listId and itemId, instruct AI to fetch the item via MCP and summarize
         if (!prompt && data && data.listId && data.itemId) {
-            prompt = `Using the SharePoint MCP tool, retrieve the item with ID ${data.itemId} from the SharePoint list with ID '${data.listId}' from sharepoint site ${sharepointSiteUrl}. Once retrieved, generate a concise, professional summary of the list item data (including school name, selected school, assignee, document status, damages, and comments).`;
+            prompt = `Using the SharePoint MCP tool, retrieve all items from the SharePoint list named "MCP_demo" from sharepoint site ${sharepointSiteUrl}. Once retrieved, generate a concise, professional summary of the list item data (including school name, selected school, assignee, document status, damages, and comments).`;
         } else if (!prompt && data) {
             prompt = `Please generate a concise, professional summary of the data.`
         }
@@ -57,7 +57,10 @@ app.http('mcpDemo', {
                         ...process.env,
                         SHAREPOINT_CLIENT_ID: process.env.CLIENT_ID || process.env.AZURE_CLIENT_ID,
                         SHAREPOINT_CLIENT_SECRET: process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET,
-                        M365_TENANT_ID: process.env.TENANT_ID || process.env.AZURE_TENANT_ID
+                        M365_TENANT_ID: process.env.TENANT_ID || process.env.AZURE_TENANT_ID,
+                        AZURE_APPLICATION_ID: process.env.AZURE_CLIENT_ID,
+                        AZURE_APPLICATION_CERTIFICATE_THUMBPRINT: process.env.AZURE_APPLICATION_CERTIFICATE_THUMBPRINT,
+                        AZURE_APPLICATION_CERTIFICATE_PASSWORD: process.env.AZURE_APPLICATION_CERTIFICATE_PASSWORD
                     }
                 });
 
@@ -100,7 +103,7 @@ app.http('mcpDemo', {
 
                 let summaryText = '';
                 let loopCount = 0;
-                const maxLoops = 10;
+                const maxLoops = 2;
 
                 while (loopCount < maxLoops) {
                     context.log(`Calling Azure OpenAI (iteration ${loopCount + 1})...`);
