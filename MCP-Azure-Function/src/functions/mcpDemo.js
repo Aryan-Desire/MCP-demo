@@ -31,7 +31,7 @@ app.http('mcpDemo', {
 
         // If no prompt was explicitly provided but we have listId and itemId, instruct AI to fetch the item via MCP and summarize
         if (!prompt && data && data.listId && data.itemId) {
-            prompt = `Using the SharePoint MCP tool, retrieve all items from the SharePoint list named "MCP_demo" from sharepoint site ${sharepointSiteUrl}. Once retrieved, generate a concise, professional summary of the list item data (including school name, selected school, assignee, document status, damages, and comments).`;
+            prompt = `First, use Sharepoint MCP tool to retrieve the list of all files in the SharePoint document library named "MCP_Templates" from sharepoint site ${sharepointSiteUrl}. This will give you the actual file. Then, for the files found in the library, retrieve their text content using the getFileContent tool and generate a detailed summary of the content and data within those files.`;
         } else if (!prompt && data) {
             prompt = `Please generate a concise, professional summary of the data.`
         }
@@ -87,6 +87,25 @@ app.http('mcpDemo', {
                     }
                 }));
 
+                // Add custom getFileContent tool
+                openAiTools.push({
+                    type: "function",
+                    function: {
+                        name: "getFileContent",
+                        description: "Retrieve the text content of a file (e.g. .docx, .pdf, .xlsx, .txt) from a SharePoint site using its server-relative URL",
+                        parameters: {
+                            type: "object",
+                            properties: {
+                                fileUrl: {
+                                    type: "string",
+                                    description: "The server-relative URL of the file (e.g. /sites/AIDevelopment/MCP_Templates/Template.docx)"
+                                }
+                            },
+                            required: ["fileUrl"]
+                        }
+                    }
+                });
+
                 const messages = [
                     { 
                         role: "system", 
@@ -103,7 +122,7 @@ app.http('mcpDemo', {
 
                 let summaryText = '';
                 let loopCount = 0;
-                const maxLoops = 2;
+                const maxLoops = 5;
 
                 while (loopCount < maxLoops) {
                     context.log(`Calling Azure OpenAI (iteration ${loopCount + 1})...`);
@@ -127,15 +146,185 @@ app.http('mcpDemo', {
                             context.log(`Model requested tool call: ${name} with args: ${JSON.stringify(args)}`);
 
                             let toolResult;
-                            try {
-                                const callRes = await mcpClient.callTool({
-                                    name: name,
-                                    arguments: args
-                                });
-                                toolResult = JSON.stringify(callRes);
-                            } catch (toolErr) {
-                                context.log(`Error executing tool ${name}:`, toolErr);
-                                toolResult = `Error: ${toolErr.message || String(toolErr)}`;
+                            if (name === "getListItems") {
+                                context.log(`Intercepting getListItems for list: ${args.listTitle}...`);
+                                try {
+                                    const { ClientSecretCredential } = require('@azure/identity');
+                                    const tenantId = process.env.TENANT_ID || process.env.AZURE_TENANT_ID;
+                                    const clientId = process.env.CLIENT_ID || process.env.AZURE_CLIENT_ID;
+                                    const clientSecret = process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET;
+                                    const siteId = process.env.SHAREPOINT_SITE_ID;
+
+                                    const credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+                                    const tokenResponse = await credential.getToken("https://graph.microsoft.com/.default");
+                                    const graphToken = tokenResponse.token;
+
+                                    const graphHeaders = {
+                                        'Authorization': `Bearer ${graphToken}`,
+                                        'Accept': 'application/json'
+                                    };
+
+                                    context.log(`Fetching drives for site: ${siteId}`);
+                                    const drivesRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drives`, {
+                                        headers: graphHeaders
+                                    });
+                                    if (!drivesRes.ok) {
+                                        throw new Error(`Failed to fetch drives: ${drivesRes.statusText}`);
+                                    }
+                                    const drivesData = await drivesRes.json();
+                                    const drives = drivesData.value || [];
+                                    const drive = drives.find(d => d.name.toLowerCase() === args.listTitle.toLowerCase() || (d.webUrl && d.webUrl.toLowerCase().endsWith('/' + args.listTitle.toLowerCase())));
+ 
+                                    if (!drive) {
+                                        throw new Error(`List '${args.listTitle}' is not a document library or drive, falling back to standard MCP tool.`);
+                                    }
+                                    let items = [];
+                                    context.log(`Fetching children for drive: ${drive.id}`);
+                                    const itemsRes = await fetch(`https://graph.microsoft.com/v1.0/drives/${drive.id}/root/children?$expand=listItem`, {
+                                        headers: graphHeaders
+                                    });
+                                    if (itemsRes.ok) {
+                                        const itemsData = await itemsRes.json();
+                                        const sitePath = new URL(sharepointSiteUrl).pathname;
+                                        items = (itemsData.value || []).map(i => {
+                                            const fileUrl = `${sitePath}/${args.listTitle}/${i.name}`;
+                                            const fields = i.listItem?.fields || {};
+                                            return {
+                                                id: i.id,
+                                                fileName: i.name,
+                                                fileUrl: fileUrl,
+                                                ...fields
+                                            };
+                                        });
+                                    }
+ 
+                                    const fieldsList = new Set(["id", "fileName", "fileUrl"]);
+                                    items.forEach(item => {
+                                        Object.keys(item).forEach(k => fieldsList.add(k));
+                                    });
+ 
+                                    toolResult = JSON.stringify({
+                                        content: [{
+                                            type: "text",
+                                            text: JSON.stringify({
+                                                listTitle: args.listTitle,
+                                                totalItems: items.length,
+                                                fields: Array.from(fieldsList),
+                                                items: items
+                                            }, null, 2)
+                                        }]
+                                    });
+                                } catch (err) {
+                                    context.log(`Error in getListItems interception:`, err);
+                                    // Fallback to standard MCP call
+                                    const callRes = await mcpClient.callTool({
+                                        name: name,
+                                        arguments: args
+                                    });
+                                    toolResult = JSON.stringify(callRes);
+                                }
+                            } else if (name === "getFileContent") {
+                                context.log(`Intercepting getFileContent for file: ${args.fileUrl}`);
+                                try {
+                                     const { ClientSecretCredential } = require('@azure/identity');
+                                     const officeParser = require('officeparser');
+ 
+                                     const tenantId = process.env.TENANT_ID || process.env.AZURE_TENANT_ID;
+                                     const clientId = process.env.CLIENT_ID || process.env.AZURE_CLIENT_ID;
+                                     const clientSecret = process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET;
+                                     const siteId = process.env.SHAREPOINT_SITE_ID;
+ 
+                                     const credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+                                     context.log(`Requesting Microsoft Graph token...`);
+                                     const tokenResponse = await credential.getToken("https://graph.microsoft.com/.default");
+                                     const graphToken = tokenResponse.token;
+ 
+                                     const graphHeaders = {
+                                         'Authorization': `Bearer ${graphToken}`,
+                                         'Accept': 'application/json'
+                                     };
+ 
+                                     context.log(`Fetching drives for site: ${siteId}`);
+                                     const drivesRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drives`, {
+                                         headers: graphHeaders
+                                     });
+                                     if (!drivesRes.ok) {
+                                         throw new Error(`Failed to fetch drives: ${drivesRes.statusText}`);
+                                     }
+                                     const drivesData = await drivesRes.json();
+                                     const drives = drivesData.value || [];
+ 
+                                     let targetDrive = null;
+                                     let relativePath = '';
+                                     const normFileUrl = args.fileUrl.replace(/\\/g, '/');
+ 
+                                     for (const drive of drives) {
+                                         if (drive.webUrl) {
+                                             const drivePath = new URL(drive.webUrl).pathname.replace(/\\/g, '/');
+                                             if (normFileUrl.toLowerCase().startsWith(drivePath.toLowerCase())) {
+                                                 targetDrive = drive;
+                                                 relativePath = normFileUrl.substring(drivePath.length);
+                                                 break;
+                                             }
+                                         }
+                                     }
+ 
+                                     if (!targetDrive) {
+                                         throw new Error(`Could not find a SharePoint drive matching file URL: ${args.fileUrl}`);
+                                     }
+ 
+                                     if (!relativePath.startsWith('/')) {
+                                         relativePath = '/' + relativePath;
+                                     }
+ 
+                                     const graphDownloadUrl = `https://graph.microsoft.com/v1.0/drives/${targetDrive.id}/root:${encodeURI(relativePath)}:/content`;
+                                     context.log(`Directly downloading file content from Graph API: ${graphDownloadUrl}`);
+ 
+                                     const fileResponse = await fetch(graphDownloadUrl, {
+                                         headers: {
+                                             'Authorization': `Bearer ${graphToken}`
+                                         }
+                                     });
+ 
+                                     if (!fileResponse.ok) {
+                                         throw new Error(`Failed to download file from Graph: ${fileResponse.statusText}`);
+                                     }
+
+                                    const arrayBuffer = await fileResponse.arrayBuffer();
+                                    const fileBuffer = Buffer.from(arrayBuffer);
+                                    const fileName = args.fileUrl.split('/').pop() || 'file';
+
+                                    let fileText = '';
+                                    if (fileName.toLowerCase().endsWith('.txt')) {
+                                        fileText = fileBuffer.toString('utf8');
+                                    } else {
+                                        const ast = await officeParser.parseOffice(fileBuffer);
+                                        fileText = await ast.toText();
+                                    }
+
+                                    toolResult = JSON.stringify({
+                                        success: true,
+                                        fileName: fileName,
+                                        content: fileText
+                                    });
+                                } catch (err) {
+                                    context.log(`Error intercepting getFileContent:`, err);
+                                    toolResult = JSON.stringify({
+                                        success: false,
+                                        error: err.message || String(err)
+                                    });
+                                }
+                            } else {
+                                try {
+                                    const callRes = await mcpClient.callTool({
+                                        name: name,
+                                        arguments: args
+                                    });
+                                    toolResult = JSON.stringify(callRes);
+                                } catch (toolErr) {
+                                    context.log(`Error executing tool ${name}:`, toolErr);
+                                    toolResult = `Error: ${toolErr.message || String(toolErr)}`;
+                                }
                             }
 
                             messages.push({
