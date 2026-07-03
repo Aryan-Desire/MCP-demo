@@ -153,7 +153,6 @@ app.http('mcpDemo', {
                                     const tenantId = process.env.TENANT_ID || process.env.AZURE_TENANT_ID;
                                     const clientId = process.env.CLIENT_ID || process.env.AZURE_CLIENT_ID;
                                     const clientSecret = process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET;
-                                    const siteId = process.env.SHAREPOINT_SITE_ID;
 
                                     const credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
                                     const tokenResponse = await credential.getToken("https://graph.microsoft.com/.default");
@@ -163,6 +162,28 @@ app.http('mcpDemo', {
                                         'Authorization': `Bearer ${graphToken}`,
                                         'Accept': 'application/json'
                                     };
+
+                                    let siteId = process.env.SHAREPOINT_SITE_ID;
+                                    if (args.url) {
+                                        try {
+                                            const urlObj = new URL(args.url);
+                                            const hostname = urlObj.hostname;
+                                            const pathname = urlObj.pathname.replace(/\/$/, "");
+                                            context.log(`Resolving site ID dynamically for ${hostname}:${pathname}...`);
+                                            const siteRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${hostname}:${pathname}`, {
+                                                headers: graphHeaders
+                                            });
+                                            if (siteRes.ok) {
+                                                const siteData = await siteRes.json();
+                                                siteId = siteData.id;
+                                                context.log(`Resolved site ID dynamically: ${siteId}`);
+                                            } else {
+                                                context.log(`Failed to resolve site ID dynamically: ${siteRes.statusText}`);
+                                            }
+                                        } catch (urlErr) {
+                                            context.log(`Error parsing url for dynamic site ID lookup:`, urlErr);
+                                        }
+                                    }
 
                                     context.log(`Fetching drives for site: ${siteId}`);
                                     const drivesRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drives`, {
@@ -228,22 +249,44 @@ app.http('mcpDemo', {
                                 try {
                                      const { ClientSecretCredential } = require('@azure/identity');
                                      const officeParser = require('officeparser');
- 
+
                                      const tenantId = process.env.TENANT_ID || process.env.AZURE_TENANT_ID;
                                      const clientId = process.env.CLIENT_ID || process.env.AZURE_CLIENT_ID;
                                      const clientSecret = process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET;
-                                     const siteId = process.env.SHAREPOINT_SITE_ID;
- 
+
                                      const credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
                                      context.log(`Requesting Microsoft Graph token...`);
                                      const tokenResponse = await credential.getToken("https://graph.microsoft.com/.default");
                                      const graphToken = tokenResponse.token;
- 
+
                                      const graphHeaders = {
                                          'Authorization': `Bearer ${graphToken}`,
                                          'Accept': 'application/json'
                                      };
- 
+
+                                     let siteId = process.env.SHAREPOINT_SITE_ID;
+                                     const match = args.fileUrl.match(/^\/(sites\/[^\/]+)/);
+                                     if (match) {
+                                         const sitePath = '/' + match[1];
+                                         try {
+                                             const urlObj = new URL(sharepointSiteUrl);
+                                             const hostname = urlObj.hostname;
+                                             context.log(`Resolving site ID dynamically for getFileContent: ${hostname}:${sitePath}...`);
+                                             const siteRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${hostname}:${sitePath}`, {
+                                                 headers: graphHeaders
+                                             });
+                                             if (siteRes.ok) {
+                                                 const siteData = await siteRes.json();
+                                                 siteId = siteData.id;
+                                                 context.log(`Resolved site ID dynamically for getFileContent: ${siteId}`);
+                                             } else {
+                                                 context.log(`Failed to resolve site ID dynamically for getFileContent: ${siteRes.statusText}`);
+                                             }
+                                         } catch (urlErr) {
+                                             context.log(`Error parsing url for dynamic site ID lookup in getFileContent:`, urlErr);
+                                         }
+                                     }
+
                                      context.log(`Fetching drives for site: ${siteId}`);
                                      const drivesRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drives`, {
                                          headers: graphHeaders
